@@ -46,6 +46,7 @@ def build_parser():
     p = sub.add_parser("probe", help="probe a video link, optionally download it")
     p.add_argument("url")
     p.add_argument("--download", action="store_true")
+    p.add_argument("--verbose", action="store_true", help="show debug logs (yt-dlp warnings)")
     return ap
 
 
@@ -55,7 +56,7 @@ def main(argv=None):
     cfg = Config.from_env()
     if args.dry_run:
         cfg.dry_run = True
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if args.cmd == "probe":
         return cmd_probe(cfg, args.url, args.download)
     return 2

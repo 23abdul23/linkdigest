@@ -8,3 +8,6 @@ out/
 __pycache__/
 *.pyc
 .superpowers/
+
+cookies*.txt
+*.cookies

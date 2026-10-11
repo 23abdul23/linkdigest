@@ -35,7 +35,7 @@ def test_no_em_dash():
 
 def test_gitignore_has_required_entries():
     lines = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
-    for need in (".env", "*.db", "links.csv", "out/", ".venv/"):
+    for need in (".env", "*.db", "links.csv", "out/", ".venv/", "cookies*.txt"):
         assert need in lines, f".gitignore is missing {need}"
 
 

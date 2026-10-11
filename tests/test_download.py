@@ -168,5 +168,10 @@ def test_opts_silence_ytdlp_console():
     assert out.getvalue() == "" and err.getvalue() == ""
 
 
+def test_probe_verbose_flag():
+    from linkdigest import __main__ as cli
+    assert cli.build_parser().parse_args(["probe", "https://youtu.be/x", "--verbose"]).verbose is True
+
+
 if __name__ == "__main__":
     _run.main(globals())
