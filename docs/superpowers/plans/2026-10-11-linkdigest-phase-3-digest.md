@@ -10,6 +10,8 @@
 
 `VideoBundle.media == "images"` means an Instagram carousel: no transcript, `frames` are slides with `Frame.label == "Slide k of N"`. This phase must add: a slide prompt variant in `llm.build_parts` (interleave each `Slide k of N:` label before its image, extract the information shown on the slides, the user's note stays top priority, no timestamps asked for), `render.py` kind label "Instagram post" with no Timestamps section, footer line `Slides: N` instead of the frames line, and tests for each. `Digest` gains the slide count through the existing `frames_kept`/`frames_sampled` fields or a new `media` field. Phase 5 `smoke_ig.py` gets a post step using `TEST_INSTAGRAM_POST_URL`.
 
+Phase 2 review also lists what the Phase 3 code below gets wrong for `media == "images"` and must be adapted: (1) `build_parts` must not emit "Source: video" or transcript text and must use `f.label` instead of `Frame at m:ss` (for slides `t` is the slide index); (2) `parse_result` skips the duration upper bound when `duration` is 0, so for images force `timestamps = []`; (3) the prompt rubric needs a slide variant that asks for no timestamps; (4) the `render_digest` footer must read `Slides: N` and the kind label "Instagram post"; (5) `Digest` needs a `media` field because `kind` is "instagram" for both reels and posts; (6) when Phase 3 redefines the `extract` subparser keep the `cmd_extract` images branch; (7) `Skipped` can also be raised after download (unknown-duration videos), so the job runner must treat it like any other Skipped.
+
 ## Interfaces defined in this phase
 
 ```python
