@@ -19,3 +19,5 @@ Task 5: implemented (commit 2cdeaf9), review pending
 Task 5: complete (commit 2cdeaf9, review clean)
 Task 5: minor (deferred): ffmpeg failure reported as no-audio banner without logging stderr; TimeoutExpired (600s) uncaught in run_ffmpeg; &nbsp; stays U+00A0; real Whisper model load not run (needs model download, host may be blocked)
 Task 6: implemented (commit 1e5062a), review pending
+Task 6: complete (commit 1e5062a, review clean)
+Task 6: minor (deferred): extract_frames does not clear stale f_*.jpg in a reused outdir (Task 7 passes a fresh temp dir); audio-only input raises RuntimeError (transient type) instead of ProcessingError; thin() n=0 ValueError; ties drop earlier frame; interval 0 ZeroDivisionError; test_cap_is_enforced checks length only
