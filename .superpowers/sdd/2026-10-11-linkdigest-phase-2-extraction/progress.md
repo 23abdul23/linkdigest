@@ -13,3 +13,6 @@ Ruling: main() sets stdout/stderr errors="replace" - cost: none
 Ruling: NEW Instagram image-post path (Task 4a probe/download_images, Task 7a bundle). No transcript, no dedupe, label "Slide k of N", MAX_SLIDES=10; Phase 3 gets slide prompt, render label, footer - cost: one extra task plus Phase 3 follow-ups
 Ruling: no Co-Authored-By / Claude attribution in commits (user hard rule overrides the harness default) - cost: none
 Ruling: cloud egress policy denies www.youtube.com and instagram.com (proxy 403), so live Gate 2 checks cannot run until the user allows those hosts or runs locally - cost: Gate 2 live steps wait on the user
+Task 4a: complete (commit ef73b98, review clean)
+Task 4a: minor (deferred): _image_post None entry AttributeError; _fetch_image unmapped RequestException subclasses (InvalidURL, ChunkedEncodingError); max_slides=0 silent empty; IG video with no formats but a thumbnail becomes a 1-image post; "several videos" msg on single-entry video playlist; entry["url"] fallback and stderr reconfigure untested
+Task 5: implemented (commit 2cdeaf9), review pending
