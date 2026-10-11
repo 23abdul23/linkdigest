@@ -23,3 +23,7 @@ Task 6: complete (commit 1e5062a, review clean)
 Task 6: minor (deferred): extract_frames does not clear stale f_*.jpg in a reused outdir (Task 7 passes a fresh temp dir); audio-only input raises RuntimeError (transient type) instead of ProcessingError; thin() n=0 ValueError; ties drop earlier frame; interval 0 ZeroDivisionError; test_cap_is_enforced checks length only
 Task 7: complete (commit 61e0600, review clean)
 Task 7: minor (deferred): no tests for missing-faster-whisper or frame-failure paths in process_video; measured duration truncated by int(); captions always labelled "en"
+Task 7a: complete (commit 0a1eb56, review clean)
+Phase 2 review: 1 real defect (parse_vtt splits a cue whose first text line is a single space; first line after a pause timestamped one cue late) - fix in progress; Phase 3 carry-ins (7 items) written into the Phase 3 plan
+Phase 2 review: minor (deferred): parse_vtt drops short genuine repeats within 4 cues; thin() is O(k^3) (9.8 s at 400 frames, only with LONG_VIDEO_ACTION=process); IG reel with no formats and one thumbnail would be analysed as a 1-slide post (watch at Gate 2)
+Note: tag gate-1 exists on the remote at 8a117d8 only (not fetched locally)
