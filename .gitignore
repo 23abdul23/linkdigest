@@ -1,0 +1,10 @@
+.env
+*.db
+*.db-wal
+*.db-shm
+links.csv
+out/
+.venv/
+__pycache__/
+*.pyc
+.superpowers/
