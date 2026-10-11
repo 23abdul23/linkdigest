@@ -29,3 +29,5 @@ Phase 2 review: minor (deferred): parse_vtt drops short genuine repeats within 4
 Note: tag gate-1 exists on the remote at 8a117d8 only (not fetched locally)
 Phase 2 review defect fixed (commit 301a782)
 Gate 2 offline: complete (HEAD 301a782); live steps blocked by cloud egress policy (www.youtube.com, instagram.com 403), awaiting user
+Gate 2 live (cloud, Linux, after user opened hosts): Instagram OK. Reel DeIBJlvzu4i 14s: whisper en, 1 line, 3 of 7 frames, whisper 6.0s (incl. model load). Reel DeEvhJTSP2P 14s: whisper en, 1 line, 6 of 7 frames, 2.3s. Post DeK6kAomai9: media=images slides=7, readable 1024px slides. Long video Em9EzurouOU: Skipped 7:03 over 5:00 OK.
+Gate 2 live: YouTube probe works (title, duration) but media download returns HTTP 403 from this datacenter IP on every player client (default, android_vr, mweb 403; tv, web_safari, ios need sign-in). That is the known bot-wall risk; needs cookies (YTDLP_COOKIES) or a PO token. Shorts 3SAARPxSV1U (captions) and sJOz9jMko4Q (Hindi, whisper) not yet verified live.
