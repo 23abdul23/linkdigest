@@ -1,5 +1,6 @@
 """Shared test helpers. Fakes only the network edges."""
 import pathlib
+import random
 
 import _run  # noqa: F401  (sets sys.path)
 from yt_dlp.utils import DownloadError
@@ -85,3 +86,56 @@ def ig_post_info(n=3, **entry_extra):
         {"url": f"https://cdn/{i}-big.jpg", "width": 1080, "height": 1350}], **entry_extra}
         for i in range(1, n + 1)]
     return {"_type": "playlist", "title": "Post by someone", "entries": entries}
+
+
+ROLLING_VTT = """WEBVTT
+Kind: captions
+Language: en
+
+00:00:01.000 --> 00:00:03.000 align:start position:0%
+hello and welcome<00:00:01.500><c> to</c><00:00:02.000><c> the</c>
+
+00:00:03.000 --> 00:00:03.010 align:start position:0%
+hello and welcome to the
+
+00:00:03.010 --> 00:00:05.000 align:start position:0%
+hello and welcome to the
+today we install<00:00:04.000><c> the</c>
+
+00:00:05.000 --> 00:00:06.000 align:start position:0%
+today we install the
+dependencies first
+
+00:01:05.000 --> 00:01:07.000 align:start position:0%
+dependencies first
+run pip install requests
+"""
+
+ROLLING_EXPECTED = [(1.0, "hello and welcome to the"), (3.01, "today we install the"),
+                    (5.0, "dependencies first"), (65.0, "run pip install requests")]
+
+
+def make_video(dirpath, seeds=(1, 2, 3), seconds=4):
+    """Silent video: one still per seed, each shown for `seconds`. Random blocky stills have far-apart dHashes."""
+    from PIL import Image, ImageDraw
+    d = pathlib.Path(dirpath)
+    paths = []
+    for seed in seeds:
+        rnd = random.Random(seed)
+        im = Image.new("L", (324, 240))
+        draw = ImageDraw.Draw(im)
+        for r in range(8):
+            for c in range(9):
+                draw.rectangle([c * 36, r * 30, c * 36 + 35, r * 30 + 29], fill=rnd.randint(0, 255))
+        p = d / f"s{seed}.png"
+        im.convert("RGB").save(p)
+        paths.append(p)
+    out = d / "synthetic.mp4"
+    args = []
+    for p in paths:
+        args += ["-loop", "1", "-t", str(seconds), "-i", str(p)]
+    n = len(paths)
+    chain = "".join(f"[{i}:v]" for i in range(n)) + f"concat=n={n}:v=1:a=0,format=yuv420p"
+    from linkdigest.util import run_ffmpeg
+    run_ffmpeg([*args, "-filter_complex", chain, "-r", "25", str(out)])
+    return out
