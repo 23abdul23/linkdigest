@@ -16,3 +16,6 @@ Ruling: cloud egress policy denies www.youtube.com and instagram.com (proxy 403)
 Task 4a: complete (commit ef73b98, review clean)
 Task 4a: minor (deferred): _image_post None entry AttributeError; _fetch_image unmapped RequestException subclasses (InvalidURL, ChunkedEncodingError); max_slides=0 silent empty; IG video with no formats but a thumbnail becomes a 1-image post; "several videos" msg on single-entry video playlist; entry["url"] fallback and stderr reconfigure untested
 Task 5: implemented (commit 2cdeaf9), review pending
+Task 5: complete (commit 2cdeaf9, review clean)
+Task 5: minor (deferred): ffmpeg failure reported as no-audio banner without logging stderr; TimeoutExpired (600s) uncaught in run_ffmpeg; &nbsp; stays U+00A0; real Whisper model load not run (needs model download, host may be blocked)
+Task 6: implemented (commit 1e5062a), review pending
