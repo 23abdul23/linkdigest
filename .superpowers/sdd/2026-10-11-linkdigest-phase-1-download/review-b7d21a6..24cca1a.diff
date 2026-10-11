@@ -1,0 +1,330 @@
+# Review package: b7d21a6..24cca1a
+
+## Commits
+24cca1a feat: errors, util, config, url classify and canonical key
+
+## Files changed
+ linkdigest/classify.py | 56 +++++++++++++++++++++++++++++++++++
+ linkdigest/config.py   | 80 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ linkdigest/errors.py   | 10 +++++++
+ linkdigest/util.py     | 43 +++++++++++++++++++++++++++
+ tests/test_classify.py | 43 +++++++++++++++++++++++++++
+ tests/test_config.py   | 47 +++++++++++++++++++++++++++++
+ 6 files changed, 279 insertions(+)
+
+## Diff
+diff --git a/linkdigest/classify.py b/linkdigest/classify.py
+new file mode 100644
+index 0000000..7292ff5
+--- /dev/null
++++ b/linkdigest/classify.py
+@@ -0,0 +1,56 @@
++from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
++
++_TRACK = {"fbclid", "gclid", "si", "igshid", "igsh", "feature", "mc_cid", "mc_eid"}
++
++
++def _host(h):
++    h = (h or "").lower()
++    for prefix in ("www.", "m."):
++        if h.startswith(prefix):
++            h = h[len(prefix):]
++    return h
++
++
++def classify(url):
++    host = _host(urlparse(url.strip()).hostname)
++    if host in ("youtube.com", "youtu.be") or host.endswith(".youtube.com"):
++        return "youtube"
++    if host == "instagram.com" or host.endswith(".instagram.com"):
++        return "instagram"
++    return "web"
++
++
++def normalize_url(raw):
++    """Return a usable http(s) URL, or '' if the text is not a link."""
++    u = raw.strip()
++    if not u:
++        return ""
++    if "://" not in u:
++        u = "https://" + u
++    p = urlparse(u)
++    if p.scheme not in ("http", "https") or not p.hostname or "." not in p.hostname:
++        return ""
++    return u
++
++
++def canonical(url):
++    """Stable key: the same video or page maps to one key whatever the tracking params."""
++    p = urlparse(url.strip())
++    host = _host(p.hostname)
++    path = p.path.rstrip("/")
++    q = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
++         if k not in _TRACK and not k.startswith("utm_")]
++    kind = classify(url)
++    if kind == "youtube":
++        vid = None
++        if host == "youtu.be":
++            vid = path.lstrip("/").split("/")[0]
++        elif path.split("/")[1:2] in (["shorts"], ["embed"], ["live"]) and len(path.split("/")) > 2:
++            vid = path.split("/")[2]
++        else:
++            vid = dict(q).get("v")
++        if vid:
++            return f"https://youtube.com/watch?v={vid}"
++    if kind == "instagram":
++        q = []
++    return urlunparse(("https", host, path, "", urlencode(sorted(q)), ""))
+diff --git a/linkdigest/config.py b/linkdigest/config.py
+new file mode 100644
+index 0000000..58d50a7
+--- /dev/null
++++ b/linkdigest/config.py
+@@ -0,0 +1,80 @@
++import os
++import tempfile
++from dataclasses import dataclass, fields
++from pathlib import Path
++
++
++def load_env(path=".env"):
++    """Tiny .env loader. Real environment variables win over the file."""
++    p = Path(path)
++    if not p.exists():
++        return
++    for line in p.read_text(encoding="utf-8").splitlines():
++        line = line.strip()
++        if not line or line.startswith("#") or "=" not in line:
++            continue
++        key, val = line.split("=", 1)
++        val = val.split(" #", 1)[0].strip().strip('"').strip("'")
++        os.environ.setdefault(key.strip(), val)
++
++
++def _bool(v):
++    return str(v).strip().lower() in ("1", "true", "yes", "on")
++
++
++@dataclass
++class Config:
++    source_csv: str = "./links.csv"
++    poll_seconds: int = 120
++    db_path: str = "./jobs.db"
++    work_dir: str = ""
++    out_dir: str = "./out"
++    dry_run: bool = False
++    max_video_seconds: int = 300
++    long_video_action: str = "skip"
++    frame_interval_seconds: float = 2.0
++    max_frames: int = 12
++    frame_hash_distance: int = 10
++    whisper_model: str = "base"
++    ytdlp_cookies: str = ""
++    js_runtime: str = "node"
++    llm_provider: str = "gemini"
++    llm_api_key: str = ""
++    llm_model: str = "gemini-3.6-flash"
++    llm_fallback_model: str = "gemini-3.5-flash-lite"
++    ollama_url: str = "http://localhost:11434"
++    ollama_model: str = "gemma4:e4b"
++    max_text_chars: int = 60000
++    min_text_chars: int = 500
++    jina_fallback: bool = False
++    smtp_host: str = "smtp.gmail.com"
++    smtp_port: int = 587
++    smtp_user: str = ""
++    smtp_pass: str = ""
++    mail_from: str = ""
++    mail_to: str = ""
++    notify_on_failure: bool = True
++    max_attempts: int = 3
++    test_youtube_url: str = ""
++    test_youtube_nocaps_url: str = ""
++    test_blog_url: str = ""
++    test_long_video_url: str = ""
++    test_instagram_url: str = ""
++
++    @classmethod
++    def from_env(cls):
++        kw = {}
++        for f in fields(cls):
++            raw = os.environ.get(f.name.upper())
++            if raw is None or raw == "":
++                continue
++            kw[f.name] = _bool(raw) if f.type is bool else f.type(raw)
++        return cls(**kw)
++
++    @property
++    def work_path(self):
++        return Path(self.work_dir) if self.work_dir else Path(tempfile.gettempdir()) / "linkdigest"
++
++    @property
++    def mail_sender(self):
++        return self.mail_from or self.smtp_user
+diff --git a/linkdigest/errors.py b/linkdigest/errors.py
+new file mode 100644
+index 0000000..38dce79
+--- /dev/null
++++ b/linkdigest/errors.py
+@@ -0,0 +1,10 @@
++class Skipped(Exception):
++    """Job is not an error but will not be processed (for example a long video)."""
++
++
++class ProcessingError(Exception):
++    """Permanent failure. The message is shown to the user, so keep it plain."""
++
++
++class Blocked(ProcessingError):
++    """Instagram login wall or rate limit. The worker retries it at most once."""
+diff --git a/linkdigest/util.py b/linkdigest/util.py
+new file mode 100644
+index 0000000..46e2c15
+--- /dev/null
++++ b/linkdigest/util.py
+@@ -0,0 +1,43 @@
++import contextlib
++import logging
++import re
++import subprocess
++import time
++
++from .errors import ProcessingError
++
++log = logging.getLogger("linkdigest")
++
++
++def fmt_time(sec):
++    s = int(sec)
++    return f"{s // 60}:{s % 60:02d}"
++
++
++def slug(text, n=40):
++    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
++    return (s[:n].strip("-")) or "item"
++
++
++def clip(text, n):
++    return text if len(text) <= n else text[: n - 3].rstrip() + "..."
++
++
++@contextlib.contextmanager
++def timed(timings, name):
++    t0 = time.monotonic()
++    try:
++        yield
++    finally:
++        timings[name] = time.monotonic() - t0
++        log.info("step %s took %.1fs", name, timings[name])
++
++
++def run_ffmpeg(args):
++    try:
++        subprocess.run(["ffmpeg", "-v", "error", "-y", *args], check=True,
++                       capture_output=True, text=True, timeout=600)
++    except FileNotFoundError:
++        raise ProcessingError("ffmpeg is not installed. Install it with your package manager.") from None
++    except subprocess.CalledProcessError as e:
++        raise RuntimeError("ffmpeg failed: " + (e.stderr or "").strip()[-200:]) from None
+diff --git a/tests/test_classify.py b/tests/test_classify.py
+new file mode 100644
+index 0000000..1366e0d
+--- /dev/null
++++ b/tests/test_classify.py
+@@ -0,0 +1,43 @@
++import _run
++from linkdigest.classify import canonical, classify, normalize_url
++
++
++def test_classify_hosts():
++    assert classify("https://www.youtube.com/watch?v=abc") == "youtube"
++    assert classify("https://youtu.be/abc") == "youtube"
++    assert classify("https://m.youtube.com/watch?v=abc") == "youtube"
++    assert classify("https://music.youtube.com/watch?v=abc") == "youtube"
++    assert classify("https://www.instagram.com/reel/C-cTZA1M9mE/") == "instagram"
++    assert classify("https://instagram.com/p/abc/") == "instagram"
++    assert classify("https://example.com/blog/post") == "web"
++    assert classify("https://notyoutube.com/x") == "web"
++
++
++def test_normalize_url():
++    assert normalize_url("  youtu.be/abc  ") == "https://youtu.be/abc"
++    assert normalize_url("https://example.com/a b") == "https://example.com/a b"
++    assert normalize_url("hello world") == ""
++    assert normalize_url("") == ""
++    assert normalize_url("ftp://example.com/x") == ""
++    assert normalize_url("javascript:alert(1)") == ""
++
++
++def test_canonical_youtube_variants_share_one_key():
++    want = "https://youtube.com/watch?v=abc123"
++    for u in [
++        "https://www.youtube.com/watch?v=abc123",
++        "https://m.youtube.com/watch?v=abc123&t=30s",
++        "https://youtu.be/abc123?si=XYZ",
++        "https://www.youtube.com/shorts/abc123",
++        "https://www.youtube.com/watch?v=abc123&list=PL1&index=2&utm_source=x",
++    ]:
++        assert canonical(u) == want, u
++
++
++def test_canonical_strips_tracking_and_instagram_query():
++    assert canonical("https://www.instagram.com/reel/AbC/?igsh=zzz") == "https://instagram.com/reel/AbC"
++    assert canonical("https://Example.com/a/?utm_medium=x&id=5&fbclid=1#top") == "https://example.com/a?id=5"
++
++
++if __name__ == "__main__":
++    _run.main(globals())
+diff --git a/tests/test_config.py b/tests/test_config.py
+new file mode 100644
+index 0000000..c66c8f2
+--- /dev/null
++++ b/tests/test_config.py
+@@ -0,0 +1,47 @@
++import os
++import tempfile
++from pathlib import Path
++
++import _run
++from linkdigest import config
++from linkdigest.config import Config, load_env
++
++
++def test_load_env_parses_comments_quotes_and_does_not_override():
++    with tempfile.TemporaryDirectory() as d:
++        p = Path(d) / ".env"
++        p.write_text('# c\nFOO_T1=bar  # tail\nFOO_T2="quoted value"\nFOO_T3=\nEXIST_T4=file\n', encoding="utf-8")
++        os.environ["EXIST_T4"] = "real"
++        try:
++            load_env(str(p))
++            assert os.environ["FOO_T1"] == "bar"
++            assert os.environ["FOO_T2"] == "quoted value"
++            assert os.environ["FOO_T3"] == ""
++            assert os.environ["EXIST_T4"] == "real"
++        finally:
++            for k in ("FOO_T1", "FOO_T2", "FOO_T3", "EXIST_T4"):
++                os.environ.pop(k, None)
++
++
++def test_from_env_types_and_blank_means_default():
++    os.environ.update({"POLL_SECONDS": "30", "DRY_RUN": "true", "MAX_FRAMES": "", "FRAME_INTERVAL_SECONDS": "4"})
++    try:
++        c = Config.from_env()
++        assert c.poll_seconds == 30 and isinstance(c.poll_seconds, int)
++        assert c.dry_run is True
++        assert c.max_frames == 12
++        assert c.frame_interval_seconds == 4.0
++    finally:
++        for k in ("POLL_SECONDS", "DRY_RUN", "MAX_FRAMES", "FRAME_INTERVAL_SECONDS"):
++            os.environ.pop(k, None)
++
++
++def test_work_path_and_sender_defaults():
++    c = Config()
++    assert c.work_path.name == "linkdigest"
++    assert Config(smtp_user="a@b.c").mail_sender == "a@b.c"
++    assert Config(smtp_user="a@b.c", mail_from="x@y.z").mail_sender == "x@y.z"
++
++
++if __name__ == "__main__":
++    _run.main(globals())

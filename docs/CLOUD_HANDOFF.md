@@ -3,7 +3,7 @@
 Read in this order: `docs/superpowers/plans/2026-10-11-linkdigest.md` (index, constraints, test strategy), `docs/linkdigest_handoff_prompt.md` (spec, Part 2 wins), `docs/research.md` (research and deviations), this file, then the Phase 2 plan.
 
 ## How work is tracked now
-The SDD workspace is committed in this repository on purpose (user decision), under `.superpowers/sdd/<plan-name>/`. For Phase 1 it holds `progress.md` (the ledger with rulings and deferred minors), `task-N-brief.md`, `task-N-report.md` and the review diffs. Continue the same convention for each later plan file: run the skill's `scripts/sdd-workspace <plan file>` to get the directory, and keep `progress.md` there. Commit the workspace with the code so state survives any session move.
+The SDD workspace is committed in this repository on purpose (user decision), under `.superpowers/sdd/<plan-name>/`. For Phase 1 it holds `progress.md` (the ledger with rulings and deferred minors), `task-N-brief.md`, `task-N-report.md` and the review diffs. Gotcha: the skill's `scripts/sdd-workspace` writes `.superpowers/sdd/.gitignore` containing `*`, which hides the workspace from git. The user wants it tracked, so delete that one file after running the script (or use `git add -f`). Continue the same convention for each later plan file: run the skill's `scripts/sdd-workspace <plan file>` to get the directory, and keep `progress.md` there. Commit the workspace with the code so state survives any session move.
 
 ## Working agreements (from the user)
 - Execute with `superpowers:subagent-driven-development`: one fresh implementer subagent per task, then a spec and quality reviewer, fix loop, a gate review per phase. Stop at each gate and report, because live checks need user input.
