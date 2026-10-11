@@ -27,3 +27,5 @@ Task 7a: complete (commit 0a1eb56, review clean)
 Phase 2 review: 1 real defect (parse_vtt splits a cue whose first text line is a single space; first line after a pause timestamped one cue late) - fix in progress; Phase 3 carry-ins (7 items) written into the Phase 3 plan
 Phase 2 review: minor (deferred): parse_vtt drops short genuine repeats within 4 cues; thin() is O(k^3) (9.8 s at 400 frames, only with LONG_VIDEO_ACTION=process); IG reel with no formats and one thumbnail would be analysed as a 1-slide post (watch at Gate 2)
 Note: tag gate-1 exists on the remote at 8a117d8 only (not fetched locally)
+Phase 2 review defect fixed (commit 301a782)
+Gate 2 offline: complete (HEAD 301a782); live steps blocked by cloud egress policy (www.youtube.com, instagram.com 403), awaiting user
