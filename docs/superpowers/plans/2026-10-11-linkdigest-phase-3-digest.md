@@ -6,6 +6,10 @@
 
 **Spec:** handoff "Processing: text", "LLM", "Email", "Dry run", and `research.md` LLM, Web extraction, Email sections and deviations 3, 4, 9, 10, 11, 12.
 
+## Carried in from Phase 2 (Instagram image posts, ruling 2026-10-11)
+
+`VideoBundle.media == "images"` means an Instagram carousel: no transcript, `frames` are slides with `Frame.label == "Slide k of N"`. This phase must add: a slide prompt variant in `llm.build_parts` (interleave each `Slide k of N:` label before its image, extract the information shown on the slides, the user's note stays top priority, no timestamps asked for), `render.py` kind label "Instagram post" with no Timestamps section, footer line `Slides: N` instead of the frames line, and tests for each. `Digest` gains the slide count through the existing `frames_kept`/`frames_sampled` fields or a new `media` field. Phase 5 `smoke_ig.py` gets a post step using `TEST_INSTAGRAM_POST_URL`.
+
 ## Interfaces defined in this phase
 
 ```python

@@ -6,6 +6,34 @@
 
 **Spec:** handoff "Processing: video" steps 3 to 5, `research.md` Transcription and Frames sections and deviations 7 and 8.
 
+## Amendments from Gate 1 live findings (rulings, 2026-10-11)
+
+1. **Unknown duration.** Instagram reels return `duration: None`. `probe()` no longer raises for it: `Probe.duration` is `int | None`. A known duration over `MAX_VIDEO_SECONDS` is still skipped before download. An unknown one is downloaded, measured with ffprobe (`util.probe_duration`), and the limit is applied after download (Skipped, or a banner under `LONG_VIDEO_ACTION=process`). If ffprobe cannot measure it, the job continues (the frame cap bounds the cost) and a log warning is written.
+2. **Console encoding.** `main()` reconfigures `sys.stdout` and `sys.stderr` with `errors="replace"` so an emoji title cannot crash `print` on a cp1252 console. Harmless on Linux.
+3. **Instagram image posts.** `probe()` passes `ignore_no_formats_error=True`. When the Instagram result has no video formats and has image entries (a `playlist` whose entries have thumbnails, or one entry with thumbnails and no formats), it returns `Probe(media="images", image_urls=[largest thumbnail url per entry])`. `download_images()` fetches them with `requests` (no cookies, anonymous worked), capped at `MAX_SLIDES` (new config, default 10). No transcript, no dHash dedupe. Frames are labelled `Slide k of N` through a new optional `Frame.label`. No new dependency (Pillow resizes to at most 1024 px and re-encodes to JPEG). Phase 3 consumes this (slide prompt, render label "Instagram post", no Timestamps section, footer "Slides: N"); Phase 5 `smoke_ig.py` gets a post step.
+
+Interface changes these rulings cause (the Interfaces block below is updated to match):
+
+```python
+# download.py
+Probe(title: str, duration: int | None, media: str = "video", image_urls: list[str] = [])   # media: "video" | "images"
+download_images(urls: list[str], dest: Path, cfg) -> list[Path]
+
+# util.py
+probe_duration(path: Path) -> float | None            # ffprobe, None when unreadable
+
+# frames.py
+Frame(t: float, jpeg: bytes, hash: int, label: str = "")
+
+# config.py
+Config.max_slides: int = 10                           # env MAX_SLIDES
+
+# video_proc.py
+VideoBundle(..., media: str = "video")                # "images": transcript.source "none", frames are slides, duration 0
+```
+
+Execution order: Task 4a, Task 5, Task 6, Task 7, Task 7a, Gate 2. On Linux use `.venv/bin/python` wherever this plan says `python`.
+
 ## Interfaces defined in this phase
 
 ```python
@@ -16,7 +44,7 @@ _get_model(name: str)                                  # cached faster-whisper m
 transcribe_audio(video: Path, tmp: Path, cfg, banners: list[str]) -> Transcript
 
 # frames.py
-Frame(t: float, jpeg: bytes, hash: int)
+Frame(t: float, jpeg: bytes, hash: int, label: str = "")
 dhash(img: PIL.Image.Image) -> int
 hamming(a: int, b: int) -> int
 thin(frames: list[Frame], n: int) -> list[Frame]
@@ -24,9 +52,33 @@ extract_frames(video: Path, outdir: Path, cfg) -> tuple[list[Frame], int]   # (k
 
 # video_proc.py
 VideoBundle(title: str, duration: int, transcript: Transcript, frames: list[Frame],
-            sampled: int, banners: list[str], timings: dict)
+            sampled: int, banners: list[str], timings: dict, media: str = "video")
 process_video(url: str, kind: str, cfg) -> VideoBundle      # raises Skipped for long videos
 ```
+
+---
+
+### Task 4a: Phase 1 amendments (unknown duration, image posts, console encoding)
+
+**Files:**
+- Modify: `linkdigest/download.py` (Probe, probe, download_images), `linkdigest/util.py` (probe_duration), `linkdigest/config.py` (max_slides), `linkdigest/__main__.py` (stream errors, probe prints), `.env.example` (MAX_SLIDES), `tests/fixtures.py` (fake_ydl: no-duration, playlist and image info, fake image GET)
+- Test: `tests/test_download.py` (append), `tests/test_config.py` if it lists fields
+
+**Interfaces:** see the Amendments section. Consumes `new_ydl`, `_opts`, `to_exception`. Produces `Probe(media, image_urls)`, `download_images`, `probe_duration`, `Config.max_slides`.
+
+Required behaviour, each pinned by a test:
+- `probe()` with `info` lacking `duration` returns `Probe(duration=None, media="video")` (no raise). `is_live` and a YouTube playlist still raise `ProcessingError`.
+- `probe()` always passes `ignore_no_formats_error=True` in yt-dlp opts.
+- Instagram `_type == "playlist"` whose entries have `thumbnails` and no `formats` returns `media="images"`, `image_urls` in entry order, each the largest thumbnail by `width*height` (fall back to the last listed, then to `url`). One entry with thumbnails and no `formats` also gives `media="images"` with one URL. An Instagram playlist whose entries have `formats` (a video carousel) is not claimed here: raise `ProcessingError("Instagram posts with several videos are not supported.")`. A non-Instagram playlist keeps the "not a single video" error. No formats and no thumbnails raises `ProcessingError("No downloadable video or images were found in this link.")`.
+- `download_images(urls, dest, cfg)` uses module-level `http_get = requests.get` (tests replace it), timeout 20 s, fetches at most `cfg.max_slides`, writes `slide-01.jpg`, `slide-02.jpg` ... in order, returns the paths. Each image is opened with Pillow, converted to RGB, shrunk to fit 1024x1024, saved as JPEG quality 85. HTTP 5xx, timeouts and connection errors raise `RuntimeError` (transient). Any other HTTP error or an undecodable image raises `ProcessingError("Could not download the post images.")`. A partial carousel is never returned.
+- `util.probe_duration(path)` runs `ffprobe -v error -show_entries format=duration -of csv=p=0`, returns float seconds or `None` for a missing ffprobe, a non-zero exit, `N/A` or junk output. Never raises.
+- `main()` calls `sys.stdout.reconfigure(errors="replace")` and the same for stderr when the attribute exists. Test with a cp1252 `io.TextIOWrapper` over `BytesIO`: printing a title containing an emoji must not raise.
+- `cmd_probe` prints `duration=unknown` when `None`, and `media=images slides=N` for a post. With `--download` on a post it downloads the slides to the temp dir and prints the count and total bytes.
+- `Config.max_slides` reads `MAX_SLIDES`; `.env.example` gains `MAX_SLIDES=10`.
+
+- [ ] Step 1: write the failing tests; run `python tests/test_download.py`, expect failures.
+- [ ] Step 2: implement. Keep `probe` and `download` signatures. Existing tests must stay green (the duration-None test that expected the "length" error is replaced by the new behaviour).
+- [ ] Step 3: `python tests/run_all.py` all ok, then commit with explicit `git add` paths: `git commit -m "feat: unknown duration, Instagram image posts, safe console encoding"`.
 
 ---
 
@@ -691,6 +743,27 @@ git commit -m "feat: video_proc and the extract command"
 
 ---
 
+### Task 7a: Instagram image posts in video_proc and `extract`
+
+**Files:**
+- Modify: `linkdigest/video_proc.py`, `linkdigest/frames.py` (`Frame.label`), `linkdigest/__main__.py` (`cmd_extract`), `tests/test_video.py`, and the same file's after-download duration rule from Ruling 1 (see below)
+- Test: `tests/test_video.py` (append), `tests/test_frames.py` (label default)
+
+**Interfaces:** consumes `Probe.media/image_urls`, `download_images`, `probe_duration`, `Config.max_slides`. Produces `process_video` routing to a private `_process_images`, `VideoBundle.media`.
+
+Required behaviour, each pinned by a test:
+- `Frame` gains `label: str = ""` (default keeps every existing call valid).
+- Ruling 1 in `process_video`: when `pr.duration` is `None`, download first, then `probe_duration(dl.video)`; apply the same limit and message (`Video is M:SS, over the M:SS limit.`) after the download (Skipped, or banner under `process`). Unreadable duration (`None`) logs a warning and continues. `VideoBundle.duration` becomes the measured int (0 when unknown). The temp dir is still removed on every path, including the Skipped one.
+- `process_video` with `pr.media == "images"` returns a bundle with `media="images"`, `transcript=Transcript([], "none", None)`, `duration=0`, `sampled=N`, and one `Frame(t=k-1, jpeg, hash=0, label="Slide k of N")` per image, in order, no dedupe, no audio banner. If the post has more images than `max_slides`, a banner says `Post has N slides; the first M were analysed.` (`probe` returns all URLs; `download_images` caps; N is `len(pr.image_urls)`). Timings include `probe` and `download`. The temp dir is removed.
+- `cmd_extract` on a post writes `slide-01.jpg` ... (not `frame-...s.jpg`), prints `media=images slides=N`, and writes no `transcript.txt`.
+- The existing video tests stay green; add tests for: unknown duration over the limit skips after the download (fake `probe_duration` patched on `video_proc`), unknown duration under the limit proceeds, unmeasurable duration proceeds, a 3-image fake post gives labels `Slide 1 of 3` ... and no audio banner, a post over the cap gets the banner.
+
+- [ ] Step 1: write the failing tests, run `python tests/test_video.py`, expect failures.
+- [ ] Step 2: implement.
+- [ ] Step 3: `python tests/run_all.py` all ok; commit with explicit paths: `git commit -m "feat: process Instagram image posts as labelled slides"`.
+
+---
+
 ### Gate 2: transcript and frames are right on real videos
 
 Stop and report. Do not start Phase 3 until the user says OK.
@@ -713,7 +786,7 @@ Expected: `transcript source=captions`, lines in the hundreds for a 4 to 5 min t
 python -m linkdigest extract "<TEST_YOUTUBE_NOCAPS_URL>"
 ```
 
-Expected: `transcript source=whisper language=en`, a `timings transcript=<s>` value. Record that number: research measured 12 s of transcription plus about 1.5 s audio extraction for a 4.5 min clip on this machine (Windows, 4 threads). Report the real figure. Read `transcript.txt` and judge accuracy.
+Expected: `transcript source=whisper language=hi` (the Short is Hindi) with the non-English banner, a `timings transcript=<s>` value. Record that number: research measured 12 s of transcription plus about 1.5 s audio extraction for a 4.5 min clip on this machine (Windows, 4 threads). Report the real figure. Read `transcript.txt` and judge accuracy.
 
 - [ ] **Step 4: Instagram reels.** For each reel that downloaded at Gate 1:
 
@@ -722,6 +795,8 @@ python -m linkdigest extract "<reel url>"
 ```
 
 Expected: `transcript source=whisper` (reels have no captions) or `source=none` plus the audio banner for a silent reel, and frames. Reels that were blocked at Gate 1 print `Blocked: ...`; that is an acceptable result and goes in the report.
+
+- [ ] **Step 4b: Instagram image post.** `python -m linkdigest extract "<TEST_INSTAGRAM_POST_URL>"`. Expected: `media=images slides=7`, files `slide-01.jpg` to `slide-07.jpg` in `out/extract-<title>/`, no transcript file, no `banner:` lines. Open the slides: all 7 present, in order, text readable at the saved size (a "20 Claude Code skills" carousel).
 
 - [ ] **Step 5: Non-English check (Review Focus 4).** If the user has a Hindi or Hinglish link, run `extract` on it. Expected: `language=hi` (or `en`) and a `banner: Detected spoken language ...` line when not English. Report how readable the transcript is. If no such link, say so in the report.
 
