@@ -21,3 +21,5 @@ Task 5: minor (deferred): ffmpeg failure reported as no-audio banner without log
 Task 6: implemented (commit 1e5062a), review pending
 Task 6: complete (commit 1e5062a, review clean)
 Task 6: minor (deferred): extract_frames does not clear stale f_*.jpg in a reused outdir (Task 7 passes a fresh temp dir); audio-only input raises RuntimeError (transient type) instead of ProcessingError; thin() n=0 ValueError; ties drop earlier frame; interval 0 ZeroDivisionError; test_cap_is_enforced checks length only
+Task 7: complete (commit 61e0600, review clean)
+Task 7: minor (deferred): no tests for missing-faster-whisper or frame-failure paths in process_video; measured duration truncated by int(); captions always labelled "en"
