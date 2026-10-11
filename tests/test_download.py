@@ -156,5 +156,17 @@ def test_cli_probe_reports_mapped_instagram_error_not_traceback():
     assert rc == 1 and "Blocked" in out and "Traceback" not in out
 
 
+def test_opts_silence_ytdlp_console():
+    import contextlib
+    import io
+    o = download._opts(cfg())
+    assert o["noprogress"] is True
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        for m in ("debug", "info", "warning", "error"):
+            getattr(o["logger"], m)("ERROR: [Instagram] x")
+    assert out.getvalue() == "" and err.getvalue() == ""
+
+
 if __name__ == "__main__":
     _run.main(globals())

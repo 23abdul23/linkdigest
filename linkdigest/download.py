@@ -70,9 +70,17 @@ def new_ydl(opts):
     return YoutubeDL(opts)
 
 
+class _YdlLogger:
+    """Keeps yt-dlp off the console; errors still arrive as DownloadError and are mapped."""
+    def debug(self, msg):
+        log.debug("yt-dlp: %s", msg)
+
+    info = warning = error = debug
+
+
 def _opts(cfg, **extra):
     o = {"quiet": True, "no_warnings": True, "no_color": True, "noplaylist": True,
-         "socket_timeout": 20, "retries": 2}
+         "socket_timeout": 20, "retries": 2, "noprogress": True, "logger": _YdlLogger()}
     if cfg.js_runtime:
         o["js_runtimes"] = {cfg.js_runtime: {}}
     if cfg.ytdlp_cookies:

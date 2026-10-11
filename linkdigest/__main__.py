@@ -8,7 +8,7 @@ from pathlib import Path
 from .classify import classify, normalize_url
 from .config import Config, load_env
 from .download import download, probe
-from .util import fmt_time, log
+from .util import fmt_time
 
 
 def cmd_probe(cfg, url, do_download):
