@@ -12,9 +12,12 @@ IG_BLOCKED = ("Instagram blocked the download (login wall or rate limit), or the
 YT_BOT = "YouTube asked for bot verification. Run pip install -U yt-dlp or set YTDLP_COOKIES."
 YT_AGE = "Video is age-restricted. Set YTDLP_COOKIES to a cookies.txt from a logged-in browser."
 
+_NOT_VIDEO = (".vtt", ".srt", ".ttml", ".json3", ".json", ".part", ".ytdl", ".jpg", ".webp", ".png")
 FORMAT = "bv*[height<=480]+ba/b[height<=480]/b"
 _IG = ("login required", "login page", "rate-limit", "rate limit", "empty media",
        "http error 401", "http error 403", "requested content is not available")
+_TRANSIENT = ("http error 5", "service unavailable", "subtitle", "timed out",
+              "temporary failure", "connection reset")
 _GONE = ("unavailable", "not available", "removed", "does not exist", "deleted",
          "no longer available", "terminated", "not found")
 
@@ -31,6 +34,12 @@ class Downloaded:
     vtt: "Path | None"
 
 
+def _other(text):
+    lines = [ln for ln in text.strip().splitlines() if ln.strip()]
+    last = lines[-1].strip() if lines else "unknown error"
+    return ("Download failed: " + last)[:200]
+
+
 def classify_error(kind, text):
     low = text.lower()
     if "confirm your age" in low:
@@ -39,13 +48,13 @@ def classify_error(kind, text):
         return "bot", YT_BOT
     if kind == "instagram" and any(p in low for p in _IG):
         return "blocked", IG_BLOCKED
+    if any(p in low for p in _TRANSIENT):
+        return "other", _other(text)
     if "private" in low:
         return "private", "Video is private."
     if any(p in low for p in _GONE):
         return "gone", "Video is unavailable or removed."
-    lines = [ln for ln in text.strip().splitlines() if ln.strip()]
-    last = lines[-1].strip() if lines else "unknown error"
-    return "other", ("Download failed: " + last)[:200]
+    return "other", _other(text)
 
 
 def to_exception(kind, text):
@@ -78,6 +87,7 @@ def probe(url, kind, cfg):
             info = ydl.extract_info(url, download=False)
     except DownloadError as e:
         raise to_exception(kind, str(e)) from None
+    info = info or {}
     if info.get("is_live"):
         raise ProcessingError("Live streams are not supported.")
     if info.get("_type") == "playlist":
@@ -106,7 +116,7 @@ def download(url, kind, dest, cfg):
             raise exc from None
     files = [p for p in dest.iterdir() if p.name.startswith("v.")]
     vtts = sorted(p for p in files if p.suffix == ".vtt")
-    vids = [p for p in files if p.suffix not in (".vtt", ".part", ".ytdl", ".json")]
+    vids = [p for p in files if p.suffix not in _NOT_VIDEO]
     if not vids:
         raise ProcessingError("Download finished but no video file was found.")
     vtt = next((p for p in vtts if p.name == "v.en.vtt"), vtts[0] if vtts else None)

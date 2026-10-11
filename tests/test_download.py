@@ -106,5 +106,31 @@ def test_download_retries_without_subs_on_unknown_error_only():
     assert len(F.calls) == 1            # a permanent error is not retried
 
 
+def test_transient_errors_are_not_gone():
+    r503 = "ERROR: unable to download: HTTP Error 503: Service Unavailable"
+    assert download.classify_error("youtube", r503)[0] == "other"
+    assert type(download.to_exception("youtube", r503)) is RuntimeError
+    sub404 = "ERROR: Unable to download video subtitles for 'en': HTTP Error 404: Not Found"
+    assert download.classify_error("youtube", sub404)[0] == "other"
+    F = fake_ydl(download_errors=[sub404])
+    with tempfile.TemporaryDirectory() as d, _run.patched(download, "new_ydl", F):
+        r = download.download("https://youtu.be/abc", "youtube", Path(d), cfg())
+        assert r.vtt is None and r.video.name == "v.mp4"
+    assert [c[0] for c in F.calls] == ["download", "download"]
+
+
+def test_probe_none_info():
+    class N(fake_ydl()):
+        def extract_info(self, url, download=False):
+            return None
+    try:
+        with _run.patched(download, "new_ydl", N):
+            download.probe("https://youtu.be/abc", "youtube", cfg())
+    except ProcessingError as e:
+        assert "length" in str(e)
+    else:
+        raise AssertionError("expected ProcessingError")
+
+
 if __name__ == "__main__":
     _run.main(globals())
