@@ -132,5 +132,29 @@ def test_probe_none_info():
         raise AssertionError("expected ProcessingError")
 
 
+def test_cli_probe_prints_info_and_cleans_up():
+    import io
+    import contextlib
+    from linkdigest import __main__ as cli
+    F = fake_ydl(info={"title": "Hello", "duration": 65, "is_live": False})
+    buf = io.StringIO()
+    with tempfile.TemporaryDirectory() as d, _run.patched(download, "new_ydl", F), contextlib.redirect_stdout(buf):
+        rc = cli.cmd_probe(cfg(work_dir=d), "youtu.be/abc", True)
+        assert not list(Path(d).glob("job-*")), "temp dir must be removed"
+    out = buf.getvalue()
+    assert rc == 0 and "kind=youtube" in out and "1:05" in out and "captions=yes" in out
+
+
+def test_cli_probe_reports_mapped_instagram_error_not_traceback():
+    import io
+    import contextlib
+    from linkdigest import __main__ as cli
+    buf = io.StringIO()
+    with _run.patched(download, "new_ydl", fake_ydl(probe_error=IG_EMPTY_MEDIA)), contextlib.redirect_stdout(buf):
+        rc = cli.cmd_probe(cfg(), "https://www.instagram.com/reel/x/", False)
+    out = buf.getvalue()
+    assert rc == 1 and "Blocked" in out and "Traceback" not in out
+
+
 if __name__ == "__main__":
     _run.main(globals())
