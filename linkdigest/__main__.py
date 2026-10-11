@@ -8,7 +8,9 @@ from pathlib import Path
 from .classify import classify, normalize_url
 from .config import Config, load_env
 from .download import download, download_images, probe
-from .util import fmt_time
+from .errors import Skipped
+from .util import fmt_time, slug
+from .video_proc import process_video
 
 
 def cmd_probe(cfg, url, do_download):
@@ -48,6 +50,40 @@ def cmd_probe(cfg, url, do_download):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def cmd_extract(cfg, url):
+    """Run the video half of the pipeline and save what the model would see, for a human to inspect."""
+    link = normalize_url(url)
+    if not link:
+        print("Not a valid link.")
+        return 1
+    kind = classify(link)
+    if kind == "web":
+        print("extract is for video links; use the test command for web pages.")
+        return 1
+    try:
+        b = process_video(link, kind, cfg)
+    except Skipped as e:
+        print(f"Skipped: {e}")
+        return 0
+    except Exception as e:
+        print(f"{type(e).__name__}: {e}")
+        return 1
+    out = Path(cfg.out_dir) / f"extract-{slug(b.title)}"
+    out.mkdir(parents=True, exist_ok=True)
+    for f in b.frames:
+        (out / f"frame-{int(f.t):04d}s.jpg").write_bytes(f.jpeg)
+    (out / "transcript.txt").write_text(
+        "\n".join(f"[{fmt_time(t)}] {s}" for t, s in b.transcript.lines), encoding="utf-8")
+    print(f"title={b.title!r} duration={fmt_time(b.duration)}")
+    print(f"transcript source={b.transcript.source} language={b.transcript.language} lines={len(b.transcript.lines)}")
+    print(f"frames kept={len(b.frames)} of sampled={b.sampled} at {[fmt_time(f.t) for f in b.frames]}")
+    print("timings " + " ".join(f"{k}={v:.1f}s" for k, v in b.timings.items()))
+    for banner in b.banners:
+        print("banner:", banner)
+    print(f"saved to {out}")
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="linkdigest")
     ap.add_argument("--dry-run", action="store_true", help="write emails to OUT_DIR instead of sending")
@@ -56,6 +92,8 @@ def build_parser():
     p.add_argument("url")
     p.add_argument("--download", action="store_true")
     p.add_argument("--verbose", action="store_true", help="show debug logs (yt-dlp warnings)")
+    e = sub.add_parser("extract", help="download a video and save its transcript and frames")
+    e.add_argument("url")
     return ap
 
 
@@ -71,6 +109,8 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if args.cmd == "probe":
         return cmd_probe(cfg, args.url, args.download)
+    if args.cmd == "extract":
+        return cmd_extract(cfg, args.url)
     return 2
 
 
