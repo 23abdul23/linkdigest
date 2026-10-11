@@ -70,13 +70,19 @@ def cmd_extract(cfg, url):
         return 1
     out = Path(cfg.out_dir) / f"extract-{slug(b.title)}"
     out.mkdir(parents=True, exist_ok=True)
-    for f in b.frames:
-        (out / f"frame-{int(f.t):04d}s.jpg").write_bytes(f.jpeg)
-    (out / "transcript.txt").write_text(
-        "\n".join(f"[{fmt_time(t)}] {s}" for t, s in b.transcript.lines), encoding="utf-8")
-    print(f"title={b.title!r} duration={fmt_time(b.duration)}")
-    print(f"transcript source={b.transcript.source} language={b.transcript.language} lines={len(b.transcript.lines)}")
-    print(f"frames kept={len(b.frames)} of sampled={b.sampled} at {[fmt_time(f.t) for f in b.frames]}")
+    if b.media == "images":
+        for k, f in enumerate(b.frames, 1):
+            (out / f"slide-{k:02d}.jpg").write_bytes(f.jpeg)
+        print(f"title={b.title!r}")
+        print(f"media=images slides={len(b.frames)}")
+    else:
+        for f in b.frames:
+            (out / f"frame-{int(f.t):04d}s.jpg").write_bytes(f.jpeg)
+        (out / "transcript.txt").write_text(
+            "\n".join(f"[{fmt_time(t)}] {s}" for t, s in b.transcript.lines), encoding="utf-8")
+        print(f"title={b.title!r} duration={fmt_time(b.duration)}")
+        print(f"transcript source={b.transcript.source} language={b.transcript.language} lines={len(b.transcript.lines)}")
+        print(f"frames kept={len(b.frames)} of sampled={b.sampled} at {[fmt_time(f.t) for f in b.frames]}")
     print("timings " + " ".join(f"{k}={v:.1f}s" for k, v in b.timings.items()))
     for banner in b.banners:
         print("banner:", banner)

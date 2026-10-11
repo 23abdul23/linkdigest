@@ -3,9 +3,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .download import download, probe
+from .download import download, download_images, probe
 from .errors import ProcessingError, Skipped
-from .frames import extract_frames
+from .frames import Frame, extract_frames
 from .transcript import Transcript, parse_vtt, transcribe_audio
 from .util import fmt_time, log, probe_duration, timed
 
@@ -32,10 +32,29 @@ def _apply_limit(seconds, cfg, banners):
     banners.append(msg + " Processed anyway; the summary may be shallow.")
 
 
+def _process_images(pr, cfg, timings):
+    """An Instagram image post: the images become labelled slides, with no transcript."""
+    banners = []
+    cfg.work_path.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="job-", dir=cfg.work_path))
+    try:
+        with timed(timings, "download"):
+            paths = download_images(pr.image_urls, tmp, cfg)
+        n = len(paths)
+        frames = [Frame(k - 1, p.read_bytes(), 0, f"Slide {k} of {n}") for k, p in enumerate(paths, 1)]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(pr.image_urls) > n:
+        banners.append(f"Post has {len(pr.image_urls)} slides; the first {n} were analysed.")
+    return VideoBundle(pr.title, 0, Transcript([], "none", None), frames, n, banners, timings, "images")
+
+
 def process_video(url, kind, cfg):
     timings, banners = {}, []
     with timed(timings, "probe"):
         pr = probe(url, kind, cfg)
+    if pr.media == "images":
+        return _process_images(pr, cfg, timings)
     duration = pr.duration
     if duration is not None:
         _apply_limit(duration, cfg, banners)        # known length: refuse before downloading anything
