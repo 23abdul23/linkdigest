@@ -49,3 +49,39 @@ def fake_ydl(**attrs):
     attrs.setdefault("calls", [])
     attrs.setdefault("download_errors", [])
     return type("F", (FakeYDL,), attrs)
+
+
+def jpeg_bytes(size=(64, 48), color=(200, 30, 30), fmt="JPEG"):
+    """Real small image bytes made with Pillow."""
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, fmt)
+    return buf.getvalue()
+
+
+class FakeResponse:
+    def __init__(self, status=200, content=b""):
+        self.status_code = status
+        self.content = content
+
+
+def fake_get(responses, calls=None):
+    """Fake requests.get. responses: url -> FakeResponse or an exception instance to raise."""
+    def get(url, timeout=None, **kw):
+        if calls is not None:
+            calls.append((url, timeout))
+        r = responses[url]
+        if isinstance(r, Exception):
+            raise r
+        return r
+    return get
+
+
+def ig_post_info(n=3, **entry_extra):
+    """Instagram carousel as yt-dlp returns it: a playlist of entries with thumbnails and no formats."""
+    entries = [{"id": f"e{i}", "title": "Post", "thumbnails": [
+        {"url": f"https://cdn/{i}-small.jpg", "width": 100, "height": 100},
+        {"url": f"https://cdn/{i}-big.jpg", "width": 1080, "height": 1350}], **entry_extra}
+        for i in range(1, n + 1)]
+    return {"_type": "playlist", "title": "Post by someone", "entries": entries}

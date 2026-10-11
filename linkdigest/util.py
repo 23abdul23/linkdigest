@@ -41,3 +41,13 @@ def run_ffmpeg(args):
         raise ProcessingError("ffmpeg is not installed. Install it with your package manager.") from None
     except subprocess.CalledProcessError as e:
         raise RuntimeError("ffmpeg failed: " + (e.stderr or "").strip()[-200:]) from None
+
+
+def probe_duration(path):
+    """Length of a media file in seconds from ffprobe, or None when it cannot be read. Never raises."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                            "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=60)
+        return float(r.stdout.strip()) if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None

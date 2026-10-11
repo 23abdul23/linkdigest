@@ -34,6 +34,7 @@ class Config:
     long_video_action: str = "skip"
     frame_interval_seconds: float = 2.0
     max_frames: int = 12
+    max_slides: int = 10
     frame_hash_distance: int = 10
     whisper_model: str = "base"
     ytdlp_cookies: str = ""

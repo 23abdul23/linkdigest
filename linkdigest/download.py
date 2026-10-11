@@ -1,6 +1,9 @@
-from dataclasses import dataclass
+import io
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import requests
+from PIL import Image
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
@@ -22,10 +25,15 @@ _GONE = ("unavailable", "not available", "removed", "does not exist", "deleted",
          "no longer available", "terminated", "not found")
 
 
+http_get = requests.get         # tests replace this
+
+
 @dataclass
 class Probe:
     title: str
-    duration: int
+    duration: "int | None"          # None when the site does not say (Instagram reels)
+    media: str = "video"            # "video" | "images"
+    image_urls: list = field(default_factory=list)
 
 
 @dataclass
@@ -89,20 +97,71 @@ def _opts(cfg, **extra):
     return o
 
 
+def _best_thumbnail(entry):
+    thumbs = [t for t in entry.get("thumbnails") or [] if t.get("url")]
+    sized = [t for t in thumbs if t.get("width") and t.get("height")]
+    if sized:
+        return max(sized, key=lambda t: t["width"] * t["height"])["url"]
+    return thumbs[-1]["url"] if thumbs else entry.get("url")
+
+
+def _image_post(info, url):
+    """Instagram result without video formats: the images of a post, or an error."""
+    entries = (info.get("entries") or [info]) if info.get("_type") == "playlist" else [info]
+    if any(e.get("formats") for e in entries):
+        raise ProcessingError("Instagram posts with several videos are not supported.")
+    urls = [u for u in map(_best_thumbnail, entries) if u]
+    if not urls:
+        raise ProcessingError("No downloadable video or images were found in this link.")
+    return Probe(title=info.get("title") or url, duration=None, media="images", image_urls=urls)
+
+
 def probe(url, kind, cfg):
     try:
-        with new_ydl(_opts(cfg, skip_download=True)) as ydl:
+        with new_ydl(_opts(cfg, skip_download=True, ignore_no_formats_error=True)) as ydl:
             info = ydl.extract_info(url, download=False)
     except DownloadError as e:
         raise to_exception(kind, str(e)) from None
     info = info or {}
     if info.get("is_live"):
         raise ProcessingError("Live streams are not supported.")
-    if info.get("_type") == "playlist":
+    is_playlist = info.get("_type") == "playlist"
+    if kind == "instagram" and (is_playlist or not info.get("formats")):
+        return _image_post(info, url)
+    if is_playlist:
         raise ProcessingError("Link is a playlist, not a single video.")
-    if not info.get("duration"):
-        raise ProcessingError("Could not read the video length.")
-    return Probe(title=info.get("title") or url, duration=int(info["duration"]))
+    duration = info.get("duration")
+    return Probe(title=info.get("title") or url, duration=int(duration) if duration else None)
+
+
+def _fetch_image(url):
+    try:
+        r = http_get(url, timeout=20)
+    except (requests.Timeout, requests.ConnectionError) as e:
+        raise RuntimeError(f"Image download failed: {type(e).__name__}") from None
+    if r.status_code >= 500:
+        raise RuntimeError(f"Image download failed: HTTP {r.status_code}")
+    if r.status_code >= 400:
+        raise ProcessingError("Could not download the post images.")
+    try:
+        img = Image.open(io.BytesIO(r.content)).convert("RGB")
+        img.thumbnail((1024, 1024))
+        out = io.BytesIO()
+        img.save(out, "JPEG", quality=85)
+    except Exception:
+        raise ProcessingError("Could not download the post images.") from None
+    return out.getvalue()
+
+
+def download_images(urls, dest, cfg):
+    """Fetch up to cfg.max_slides images as slide-01.jpg ... Nothing is written unless all succeed."""
+    blobs = [_fetch_image(u) for u in urls[: cfg.max_slides]]
+    paths = []
+    for i, data in enumerate(blobs, 1):
+        p = Path(dest) / f"slide-{i:02d}.jpg"
+        p.write_bytes(data)
+        paths.append(p)
+    return paths
 
 
 def download(url, kind, dest, cfg):

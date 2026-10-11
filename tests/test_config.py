@@ -31,8 +31,11 @@ def test_from_env_types_and_blank_means_default():
         assert c.dry_run is True
         assert c.max_frames == 12
         assert c.frame_interval_seconds == 4.0
+        assert c.max_slides == 10
+        os.environ["MAX_SLIDES"] = "4"
+        assert Config.from_env().max_slides == 4
     finally:
-        for k in ("POLL_SECONDS", "DRY_RUN", "MAX_FRAMES", "FRAME_INTERVAL_SECONDS"):
+        for k in ("POLL_SECONDS", "DRY_RUN", "MAX_FRAMES", "FRAME_INTERVAL_SECONDS", "MAX_SLIDES"):
             os.environ.pop(k, None)
 
 

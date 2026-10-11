@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 
 import _run
-from fixtures import fake_ydl
+from fixtures import FakeResponse, fake_get, fake_ydl, ig_post_info, jpeg_bytes
 from linkdigest import download
 from linkdigest.config import Config
 from linkdigest.errors import Blocked, ProcessingError
@@ -54,10 +54,9 @@ def test_probe_ok_and_options():
     assert opts["js_runtimes"] == {"node": {}} and opts["cookiefile"] == "c.txt"
 
 
-def test_probe_rejects_live_playlist_and_missing_duration():
+def test_probe_rejects_live_and_playlist():
     for info, word in [({"title": "x", "duration": None, "is_live": True}, "Live"),
-                       ({"title": "x", "duration": None, "is_live": False, "_type": "playlist"}, "playlist"),
-                       ({"title": "x", "duration": None, "is_live": False}, "length")]:
+                       ({"title": "x", "duration": None, "is_live": False, "_type": "playlist"}, "playlist")]:
         with _run.patched(download, "new_ydl", fake_ydl(info=info)):
             try:
                 download.probe("https://youtu.be/abc", "youtube", cfg())
@@ -123,13 +122,9 @@ def test_probe_none_info():
     class N(fake_ydl()):
         def extract_info(self, url, download=False):
             return None
-    try:
-        with _run.patched(download, "new_ydl", N):
-            download.probe("https://youtu.be/abc", "youtube", cfg())
-    except ProcessingError as e:
-        assert "length" in str(e)
-    else:
-        raise AssertionError("expected ProcessingError")
+    with _run.patched(download, "new_ydl", N):
+        p = download.probe("https://youtu.be/abc", "youtube", cfg())
+    assert p.duration is None and p.media == "video"
 
 
 def test_cli_probe_prints_info_and_cleans_up():
@@ -171,6 +166,168 @@ def test_opts_silence_ytdlp_console():
 def test_probe_verbose_flag():
     from linkdigest import __main__ as cli
     assert cli.build_parser().parse_args(["probe", "https://youtu.be/x", "--verbose"]).verbose is True
+
+
+def test_probe_unknown_duration_is_not_an_error():
+    F = fake_ydl(info={"title": "Reel", "is_live": False, "formats": [{"url": "u"}]})
+    with _run.patched(download, "new_ydl", F):
+        p = download.probe("https://www.instagram.com/reel/x/", "instagram", cfg())
+    assert p.duration is None and p.media == "video" and p.image_urls == []
+    assert F.calls[0][1]["ignore_no_formats_error"] is True
+
+
+def test_probe_instagram_carousel_returns_largest_thumbnails_in_order():
+    with _run.patched(download, "new_ydl", fake_ydl(info=ig_post_info(3))):
+        p = download.probe("https://www.instagram.com/p/x/", "instagram", cfg())
+    assert p.media == "images" and p.duration is None and p.title == "Post by someone"
+    assert p.image_urls == [f"https://cdn/{i}-big.jpg" for i in (1, 2, 3)]
+
+
+def test_probe_thumbnail_fallbacks():
+    info = {"_type": "playlist", "title": "t", "entries": [
+        {"thumbnails": [{"url": "https://cdn/a.jpg"}, {"url": "https://cdn/b.jpg"}]},
+        {"thumbnails": [{"url": "https://cdn/c.jpg", "width": 5, "height": 5}]}]}
+    with _run.patched(download, "new_ydl", fake_ydl(info=info)):
+        p = download.probe("https://www.instagram.com/p/x/", "instagram", cfg())
+    assert p.image_urls == ["https://cdn/b.jpg", "https://cdn/c.jpg"]     # last listed when no sizes, else largest
+
+
+def test_probe_single_image_post():
+    info = {"title": "One", "thumbnails": [{"url": "https://cdn/s.jpg", "width": 10, "height": 10}]}
+    with _run.patched(download, "new_ydl", fake_ydl(info=info)):
+        p = download.probe("https://www.instagram.com/p/x/", "instagram", cfg())
+    assert p.media == "images" and p.image_urls == ["https://cdn/s.jpg"]
+
+
+def expect_error(fn, text):
+    try:
+        fn()
+    except ProcessingError as e:
+        assert text in str(e), str(e)
+    else:
+        raise AssertionError("expected ProcessingError")
+
+
+def test_probe_instagram_video_carousel_and_empty_are_rejected():
+    info = ig_post_info(2)
+    info["entries"][0]["formats"] = [{"url": "v"}]
+    with _run.patched(download, "new_ydl", fake_ydl(info=info)):
+        expect_error(lambda: download.probe("https://www.instagram.com/p/x/", "instagram", cfg()),
+                     "several videos are not supported")
+    for empty in ({"title": "x"}, {"_type": "playlist", "title": "x", "entries": [{}]}):
+        with _run.patched(download, "new_ydl", fake_ydl(info=empty)):
+            expect_error(lambda: download.probe("https://www.instagram.com/p/x/", "instagram", cfg()),
+                         "No downloadable video or images")
+
+
+def test_non_instagram_playlist_keeps_old_error():
+    with _run.patched(download, "new_ydl", fake_ydl(info=ig_post_info(2))):
+        expect_error(lambda: download.probe("https://youtube.com/playlist?list=x", "youtube", cfg()),
+                     "not a single video")
+
+
+def run_images(responses, n=3, **cfg_kw):
+    urls = [f"https://cdn/{i}-big.jpg" for i in range(1, n + 1)]
+    calls = []
+    with tempfile.TemporaryDirectory() as d, _run.patched(download, "http_get", fake_get(responses, calls)):
+        paths = download.download_images(urls, Path(d), cfg(**cfg_kw))
+        return paths, calls, [p.read_bytes() for p in paths]
+
+
+def test_download_images_writes_resized_jpegs_in_order():
+    import io
+    from PIL import Image
+    big = jpeg_bytes((3000, 1500))
+    r = {f"https://cdn/{i}-big.jpg": FakeResponse(200, big if i == 1 else jpeg_bytes(fmt="PNG"))
+         for i in (1, 2, 3)}
+    paths, calls, data = run_images(r)
+    assert [p.name for p in paths] == ["slide-01.jpg", "slide-02.jpg", "slide-03.jpg"]
+    assert all(t == 20 for _, t in calls)
+    im = Image.open(io.BytesIO(data[0]))
+    assert im.format == "JPEG" and max(im.size) == 1024
+    assert Image.open(io.BytesIO(data[1])).format == "JPEG"
+
+
+def test_download_images_caps_at_max_slides():
+    r = {f"https://cdn/{i}-big.jpg": FakeResponse(200, jpeg_bytes()) for i in range(1, 6)}
+    paths, calls, _ = run_images(r, n=5, max_slides=2)
+    assert len(paths) == 2 and len(calls) == 2
+
+
+def test_download_images_errors():
+    ok = FakeResponse(200, jpeg_bytes())
+    import requests
+    cases = [(FakeResponse(503), RuntimeError), (requests.Timeout("t"), RuntimeError),
+             (requests.ConnectionError("c"), RuntimeError),
+             (FakeResponse(404), ProcessingError), (FakeResponse(200, b"not an image"), ProcessingError)]
+    for bad, exc in cases:
+        r = {"https://cdn/1-big.jpg": ok, "https://cdn/2-big.jpg": bad}
+        try:
+            run_images(r, n=2)
+        except Exception as e:
+            assert type(e) is exc, (bad, e)
+        else:
+            raise AssertionError("expected error")
+
+
+def test_download_images_leaves_no_partial_set():
+    r = {"https://cdn/1-big.jpg": FakeResponse(200, jpeg_bytes()), "https://cdn/2-big.jpg": FakeResponse(404)}
+    with tempfile.TemporaryDirectory() as d, _run.patched(download, "http_get", fake_get(r)):
+        try:
+            download.download_images(list(r), Path(d), cfg())
+        except ProcessingError:
+            pass
+        assert not list(Path(d).iterdir())
+
+
+def test_probe_duration_parsing():
+    import subprocess
+    from linkdigest import util
+
+    def runner(out=None, rc=0, exc=None):
+        def run(*a, **k):
+            if exc:
+                raise exc
+            return subprocess.CompletedProcess(a, rc, stdout=out, stderr="")
+        return run
+    for fake, want in [(runner("12.5\n"), 12.5), (runner("N/A\n"), None), (runner("junk"), None),
+                       (runner("", rc=1), None), (runner(exc=FileNotFoundError()), None),
+                       (runner(exc=subprocess.TimeoutExpired("ffprobe", 1)), None)]:
+        with _run.patched(util.subprocess, "run", fake):
+            assert util.probe_duration(Path("x.mp4")) == want
+
+
+def test_cli_probe_unknown_duration_and_posts():
+    import io
+    import contextlib
+    from linkdigest import __main__ as cli
+    buf = io.StringIO()
+    F = fake_ydl(info={"title": "Reel", "formats": [{"url": "u"}]})
+    with _run.patched(download, "new_ydl", F), contextlib.redirect_stdout(buf):
+        assert cli.cmd_probe(cfg(), "https://www.instagram.com/reel/x/", False) == 0
+    assert "duration=unknown" in buf.getvalue()
+
+    r = {f"https://cdn/{i}-big.jpg": FakeResponse(200, jpeg_bytes()) for i in (1, 2, 3)}
+    buf = io.StringIO()
+    with tempfile.TemporaryDirectory() as d, _run.patched(download, "new_ydl", fake_ydl(info=ig_post_info(3))), \
+            _run.patched(download, "http_get", fake_get(r)), contextlib.redirect_stdout(buf):
+        assert cli.cmd_probe(cfg(work_dir=d), "https://www.instagram.com/p/x/", True) == 0
+        assert not list(Path(d).glob("job-*"))
+    out = buf.getvalue()
+    assert "media=images slides=3" in out and "slides=3 bytes=" in out
+
+
+def test_main_makes_streams_survive_emoji_on_cp1252():
+    import io
+    import sys
+    from linkdigest import __main__ as cli
+    raw = io.BytesIO()
+    fake = io.TextIOWrapper(raw, encoding="cp1252")
+    with _run.patched(sys, "stdout", fake), _run.patched(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="cp1252")):
+        cli.main(["probe", "not a link"])
+        print("title \U0001F600")
+        sys.stdout.flush()
+    assert b"title ?" in raw.getvalue()
 
 
 if __name__ == "__main__":
