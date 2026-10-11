@@ -7,7 +7,6 @@ out/
 .venv/
 __pycache__/
 *.pyc
-.superpowers/
 
 cookies*.txt
 *.cookies

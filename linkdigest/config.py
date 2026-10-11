@@ -60,6 +60,7 @@ class Config:
     test_blog_url: str = ""
     test_long_video_url: str = ""
     test_instagram_url: str = ""
+    test_instagram_post_url: str = ""
 
     @classmethod
     def from_env(cls):

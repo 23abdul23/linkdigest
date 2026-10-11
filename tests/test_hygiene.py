@@ -43,9 +43,7 @@ def test_env_example_secrets_blank():
     vals = env_values()
     for k in SECRET_KEYS:
         assert k in vals and vals[k] == "", f"{k} must be present and blank"
-    for k, v in vals.items():
-        if k.startswith("TEST_"):
-            assert v == "", f"{k} must be blank in the example"
+    # TEST_* hold public test links (user decision), so they may be filled in the example
 
 
 def test_no_key_shaped_strings():
