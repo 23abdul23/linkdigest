@@ -20,6 +20,8 @@ def test_normalize_url():
     assert normalize_url("") == ""
     assert normalize_url("ftp://example.com/x") == ""
     assert normalize_url("javascript:alert(1)") == ""
+    assert normalize_url("http://[abc") == ""
+    assert normalize_url("https://[::1") == ""
 
 
 def test_canonical_youtube_variants_share_one_key():

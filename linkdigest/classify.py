@@ -27,7 +27,10 @@ def normalize_url(raw):
         return ""
     if "://" not in u:
         u = "https://" + u
-    p = urlparse(u)
+    try:
+        p = urlparse(u)
+    except ValueError:  # e.g. "http://[abc"
+        return ""
     if p.scheme not in ("http", "https") or not p.hostname or "." not in p.hostname:
         return ""
     return u
