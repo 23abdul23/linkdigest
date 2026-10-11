@@ -24,7 +24,9 @@ def parse_vtt(text):
     previous line, so a line already seen in the last 4 cues is dropped."""
     out = []
     recent = deque(maxlen=4)
-    for block in re.split(r"\n\s*\n", text.replace("\r\n", "\n")):
+    # a whitespace-only line is cue text (YouTube emits " "), not a separator: drop it, keep real blank lines
+    text = re.sub(r"(?m)\n[ \t]+$", "", text.replace("\r\n", "\n"))
+    for block in re.split(r"\n\s*\n", text):
         lines = block.strip().split("\n")
         for i, line in enumerate(lines):
             m = _TS.match(line.strip())

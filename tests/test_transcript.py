@@ -15,6 +15,21 @@ def test_rolling_vtt_yields_each_line_once_with_start_seconds():
     assert transcript.parse_vtt(ROLLING_VTT) == ROLLING_EXPECTED
 
 
+def test_vtt_cue_with_blank_space_first_line_stays_intact():
+    vtt = ("WEBVTT\n\n"
+           "00:00:00.160 --> 00:00:02.230 align:start position:0%\n \n"
+           "hello everyone today<00:00:01.000><c> is</c>\n\n"
+           "00:00:02.230 --> 00:00:02.240 align:start position:0%\n"
+           "hello everyone today is\n \n\n"
+           "00:00:02.240 --> 00:00:04.000 align:start position:0%\n"
+           "hello everyone today is\nnext line\n\n"
+           "00:00:09.500 --> 00:00:10.000 align:start position:0%\n \n"
+           "last words\n")
+    assert transcript.parse_vtt(vtt) == [(0.16, "hello everyone today is"), (2.24, "next line"),
+                                         (9.5, "last words")]
+    assert transcript.parse_vtt(ROLLING_VTT) == ROLLING_EXPECTED
+
+
 def test_vtt_edge_cases():
     assert transcript.parse_vtt("") == []
     assert transcript.parse_vtt("WEBVTT\n\nNOTE just a note\n") == []
